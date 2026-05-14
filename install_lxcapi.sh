@@ -8,13 +8,13 @@
 #   命令行: sudo bash LxcAPI.sh --mode nat --token <TOKEN>
 #   卸载:   sudo bash LxcAPI.sh --uninstall
 #
-# 项目地址: https://lxcapi.com
+# 项目地址: https://lxc.jx.fyi
 # ============================================================================
 set -euo pipefail
 
 # ========面板动态注入区========
 # 面板在下载时自动注入以下变量，无需手动修改
-INJECT_PANEL_URL="https://lxcapi.com"
+INJECT_PANEL_URL="https://lxc.jx.fyi"
 INJECT_TOKEN=""
 INJECT_MODE=""
 INJECT_IPV6_SUBNET=""
