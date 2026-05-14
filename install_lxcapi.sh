@@ -543,11 +543,15 @@ confirm_install() {
     
     divider
     echo ""
-    echo -ne "  ${YELLOW}确认开始安装？${NC}[y/N]: "
-    read -r confirm
-    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
-        info "已取消安装"
-        exit 0
+    if [[ -t 0 ]]; then
+        echo -ne "  ${YELLOW}确认开始安装？${NC}[y/N]: "
+        read -r confirm
+        if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+            info "已取消安装"
+            exit 0
+        fi
+    else
+        echo -e "  ${YELLOW}非交互模式，自动确认安装${NC}"
     fi
 }
 
@@ -2740,11 +2744,13 @@ main() {
 
     # 端口修改逻辑
     if [[ -z "${LISTEN_PORT:-}" ]]; then
-        echo -e "\n${CYAN}==> (可选) 自定义通信端口${NC}"
-        echo -e "  ${DIM}默认 2256，若被防火墙屏蔽可改为 10000+ 端口${NC}"
-        echo -ne "  ${BOLD}通信端口 [默认 2256]: ${NC}"
-        read -r USER_PORT
-        if [[ -n "$USER_PORT" && "$USER_PORT" =~ ^[0-9]+$ ]]; then
+        if [[ -t 0 ]]; then
+            echo -e "\n${CYAN}==> (可选) 自定义通信端口${NC}"
+            echo -e "  ${DIM}默认 2256，若被防火墙屏蔽可改为 10000+ 端口${NC}"
+            echo -ne "  ${BOLD}通信端口 [默认 2256]: ${NC}"
+            read -r USER_PORT
+        fi
+        if [[ -n "${USER_PORT:-}" && "${USER_PORT:-}" =~ ^[0-9]+$ ]]; then
             LISTEN_PORT="$USER_PORT"
         else
             LISTEN_PORT="2256"
