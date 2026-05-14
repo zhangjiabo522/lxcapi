@@ -60,6 +60,7 @@ readonly NC='\033[0m'
 # ========================== 运行时变量 ==========================
 MODE=""
 TOKEN=""
+FORCE="false"
 OS_ID=""
 OS_VERSION=""
 OS_CODENAME=""
@@ -1332,12 +1333,16 @@ install_zfs_dkms() {
 install_incus() {
     step "步骤 [3/5]  安装 Incus..."
 
-    # 幂等性：已安装且服务端正常运行则跳过
-    if incus version 2>/dev/null | grep -q -E "Server version: [0-9]"; then
-        local current_ver
-        current_ver=$(incus version 2>/dev/null | awk '/Client version/ {print $3}' || echo "未知")
-        info "Incus 服务已安装并运行（版本: ${current_ver}），跳过安装"
-        return 0
+    # 幂等性：已安装且服务端正常运行则跳过（--force 可覆盖）
+    if [[ "${FORCE:-false}" != "true" ]]; then
+        if incus version 2>/dev/null | grep -q -E "Server version: [0-9]"; then
+            local current_ver
+            current_ver=$(incus version 2>/dev/null | awk '/Client version/ {print $3}' || echo "未知")
+            info "Incus 服务已安装并运行（版本: ${current_ver}），跳过安装"
+            return 0
+        fi
+    else
+        info "强制模式: 重新安装 Incus"
     fi
 
     # 导入 Zabbly GPG 密钥
@@ -1365,9 +1370,14 @@ SRC
 init_incus() {
     step "步骤 [4/5]  初始化 Incus..."
 
-    # 幂等性：网桥已存在则跳过
+    # 幂等性：网桥已存在则跳过（--force 时仍跳过网桥但更新 core 配置）
     if incus network show "$BRIDGE_NAME" &>/dev/null; then
-        info "网桥 ${BRIDGE_NAME} 已存在，跳过初始化"
+        if [[ "${FORCE:-false}" == "true" ]]; then
+            info "强制模式: 网桥已存在，仅更新 Incus 核心配置"
+            incus config set core.https_address "[::]:${LISTEN_PORT}" 2>/dev/null || true
+        else
+            info "网桥 ${BRIDGE_NAME} 已存在，跳过初始化"
+        fi
         return 0
     fi
 
@@ -1451,10 +1461,15 @@ YAML
 import_cert() {
     step "步骤 [5/5]  导入面板信任证书..."
 
-    # 幂等性：证书已存在则跳过
-    if incus config trust list --format csv 2>/dev/null | grep -q "panel"; then
-        info "面板证书已存在，跳过导入"
-        return 0
+    # 幂等性：证书已存在则跳过（--force 可覆盖）
+    if [[ "${FORCE:-false}" != "true" ]]; then
+        if incus config trust list --format csv 2>/dev/null | grep -q "panel"; then
+            info "面板证书已存在，跳过导入"
+            return 0
+        fi
+    else
+        info "强制模式: 重新导入面板证书"
+        incus config trust remove panel 2>/dev/null || true
     fi
 
     local cert_url="${PANEL_URL}/api/hosts/cert/${TOKEN}"
@@ -2673,6 +2688,7 @@ main() {
 
     # ---- 解析命令行参数（兼容非交互模式）----
     local ACTION="install"   # 默认动作为安装
+    FORCE="false"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --mode)
@@ -2685,6 +2701,8 @@ main() {
                 IPV6_IFACE="$2"; shift 2 ;;
             --port|-p)
                 LISTEN_PORT="$2"; shift 2 ;;
+            --force|-f)
+                FORCE="true"; shift ;;
             --uninstall)
                 ACTION="uninstall"; shift ;;
             --agent|--agent-menu)
@@ -2698,12 +2716,14 @@ main() {
                 echo "  --ipv6-subnet <CIDR>    IPv6 子网段（例如 2001:db8::/64）"
                 echo "  --ipv6-iface <IFACE>    IPv6 路由父网卡（例如 eth0）"
                 echo "  --port <PORT>           自定义 Incus 运行端口 (默认 2256)"
+                echo "  --force, -f             强制重装，禁止跳过已安装的组件"
                 echo "  --uninstall             卸载 Incus 节点并还原系统"
                 echo "  --agent                 打开 Agent 安装 / 更新菜单"
                 echo "  --help, -h              显示帮助信息"
                 echo ""
                 echo "交互模式: sudo bash $0"
                 echo "命令行:   sudo bash $0 --mode nat --token <YOUR_TOKEN> --port 10001"
+                echo "强制重装: sudo bash $0 --mode nat --token <YOUR_TOKEN> --force"
                 echo "卸载:     sudo bash $0 --uninstall"
                 exit 0
                 ;;
