@@ -1470,18 +1470,29 @@ import_cert() {
     else
         info "强制模式: 重新导入面板证书"
         incus config trust remove panel 2>/dev/null || true
+        sleep 1
     fi
 
     local cert_url="${PANEL_URL}/api/hosts/cert/${TOKEN}"
+    local cert_file="/tmp/lxcapi-panel-cert-$$.pem"
 
-    if ! curl -sk --connect-timeout 10 --max-time 30 --retry 2 -f "$cert_url" \
-        | incus config trust add-certificate - --name panel >/dev/null 2>&1; then
-        error "证书导入失败！请检查："
+    if ! curl -sk --connect-timeout 10 --max-time 30 --retry 2 -f "$cert_url" -o "$cert_file"; then
+        error "证书下载失败！请检查："
         error "  1. Token 是否正确"
         error "  2. 面板 ${PANEL_URL} 是否可达"
         error "  3. 网络连接是否正常 (curl -sk ${cert_url})"
+        rm -f "$cert_file"
         exit 1
     fi
+
+    if ! incus config trust add-certificate "$cert_file" --name panel 2>&1; then
+        error "证书导入失败！"
+        error "  证书已下载到 ${cert_file}，请手动检查"
+        rm -f "$cert_file"
+        exit 1
+    fi
+
+    rm -f "$cert_file"
 
     log "面板证书导入成功"
 }
