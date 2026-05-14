@@ -1471,6 +1471,82 @@ import_cert() {
     log "面板证书导入成功"
 }
 
+# 安装完成后上报主机信息到面板
+report_to_panel() {
+    step "附加步骤  上报主机信息到面板..."
+
+    local report_url="${PANEL_URL}/api/hosts/report/${TOKEN}"
+
+    # 获取公网 IP（尝试多种方式）
+    local public_ip=""
+    if command -v curl &>/dev/null; then
+        public_ip=$(curl -sk --connect-timeout 5 --max-time 10 https://api.ipify.org 2>/dev/null \
+            || curl -sk --connect-timeout 5 --max-time 10 https://icanhazip.com 2>/dev/null \
+            || curl -sk --connect-timeout 5 --max-time 10 https://ifconfig.me 2>/dev/null \
+            || true)
+    fi
+
+    # IPv6 环境下尝试获取 IPv6 地址
+    if [[ -z "$public_ip" ]]; then
+        public_ip=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print $2}' | cut -d/ -f1 | head -1 || true)
+    fi
+    if [[ -z "$public_ip" ]]; then
+        public_ip=$(ip -4 addr show scope global 2>/dev/null | awk '/inet/{print $2}' | cut -d/ -f1 | head -1 || true)
+    fi
+
+    # Incus 版本
+    local incus_ver=""
+    incus_ver=$(incus version 2>/dev/null | awk '/Client version/{print $3}' || echo "")
+
+    # 系统信息
+    local os_info=""
+    if [[ -f /etc/os-release ]]; then
+        os_info=$(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"' || echo "")
+    fi
+
+    # CPU
+    local cpu_usage=""
+    cpu_usage=$(top -bn1 2>/dev/null | grep '%Cpu' | head -1 | awk '{print $2"%"}' || echo "")
+
+    # 内存
+    local mem_usage=""
+    mem_usage=$(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}' || echo "")
+
+    # 磁盘
+    local disk_usage=""
+    disk_usage=$(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}' || echo "")
+
+    # 运行时间
+    local uptime_str=""
+    uptime_str=$(uptime -p 2>/dev/null | sed 's/up //' || echo "")
+
+    # 发送上报
+    local report_json
+    report_json=$(cat <<REPORT
+{
+  "status": "online",
+  "ip": "${public_ip}",
+  "incus_version": "${incus_ver}",
+  "cpu": "${cpu_usage}",
+  "mem": "${mem_usage}",
+  "disk": "${disk_usage}",
+  "containers": 0,
+  "os": "${os_info}",
+  "uptime": "${uptime_str}"
+}
+REPORT
+)
+
+    if curl -sk --connect-timeout 10 --max-time 15 \
+        -X POST "$report_url" \
+        -H 'Content-Type: application/json' \
+        -d "$report_json" >/dev/null 2>&1; then
+        log "主机信息已上报到面板 (IP: ${public_ip:-未知})"
+    else
+        warn "上报主机信息失败，可稍后在面板手动验证。当前 IP: ${public_ip:-未获取}"
+    fi
+}
+
 # 附加步骤：安装宿主机 Agent
 install_lxcapi_agent() {
     if [[ "$AGENT_ENABLED" != "true" ]]; then
@@ -2810,7 +2886,8 @@ main() {
     install_incus     # 3/5 安装 Incus
     init_incus        # 4/5 初始化 Incus
     import_cert       # 5/5 导入证书
-    
+    report_to_panel   # 上报主机信息（IP、版本、资源等）
+
     # 仅当启用了 IPv6 相关功能时，挂载 IPv6 双栈同步守护神
     if [[ "$MODE" == "nat_ipv6" ]]; then
         setup_v6_guardian
