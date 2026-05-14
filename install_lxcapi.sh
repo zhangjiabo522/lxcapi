@@ -1469,8 +1469,13 @@ import_cert() {
         fi
     else
         info "强制模式: 重新导入面板证书"
-        incus config trust remove panel 2>/dev/null || true
-        sleep 1
+        # 按指纹移除已有的 panel 证书（remove 需要指纹不是名称）
+        local existing_fp
+        existing_fp=$(incus config trust list --format csv 2>/dev/null | grep ",panel$" | cut -d, -f1 || true)
+        if [[ -n "$existing_fp" ]]; then
+            incus config trust remove "$existing_fp" 2>/dev/null || true
+            sleep 1
+        fi
     fi
 
     local cert_url="${PANEL_URL}/api/hosts/cert/${TOKEN}"
