@@ -1474,12 +1474,12 @@ import_cert() {
 
     local cert_url="${PANEL_URL}/api/hosts/cert/${TOKEN}"
 
-    if ! curl -sSf "$cert_url" \
+    if ! curl -sk --connect-timeout 10 --max-time 30 --retry 2 -f "$cert_url" \
         | incus config trust add-certificate - --name panel >/dev/null 2>&1; then
         error "证书导入失败！请检查："
         error "  1. Token 是否正确"
         error "  2. 面板 ${PANEL_URL} 是否可达"
-        error "  3. 网络连接是否正常"
+        error "  3. 网络连接是否正常 (curl -sk ${cert_url})"
         exit 1
     fi
 
